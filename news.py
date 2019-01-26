@@ -172,7 +172,7 @@ class DBAccess:
 
 def getJsonText(url):
 
-    time.sleep(random.randint(1, 13)*3)
+    time.sleep(random.randint(1, 23)*3)
 
     request = Request(url)
 
@@ -193,10 +193,22 @@ def getJsonText(url):
 
         	
 
-org_url="https://api-prod.wallstreetcn.com/apiv1/content/lives?channel=global-channel&client=pc&limit=50&first_page=false&accept=live%2Cvip-live&cursor="
+org_url="https://api-prod.wallstreetcn.com/apiv1/content/lives?channel=global-channel&client=pc&limit=60&first_page=false&accept=live%2Cvip-live&cursor="
 #cursor = '1547970922'
 
 
+#st =  time.localtime(int(cursor))
+#displayTime = time.strftime("%Y-%m-%d %X", st)
+
+
+#url = org_url + cursor
+
+#page = getJsonText(url)
+#print(page)
+#jsonText = json.loads(page)
+
+#print (jsonText['data']['items'][1]['content'])
+#print (displayTime)
 
 def GetPage(cursor):
     url = org_url + cursor
@@ -254,12 +266,23 @@ if __name__ == '__main__':
        exit()
     
     db_record = DBAccess()
-    db_record.connect('127.0.0.1', 'name', 'passwd', 'database', 3306)
+    db_record.connect('127.0.0.1', 'name', 'password', 'data', 3306)
    
     
+    #maxSeconds = 60*60*24*7 #获取7天的数据
 
     cursorNum = int(time.time())
-
+    #while(cursorNum is not None) :
+       #print(int(time.time()))
+       #print(cursorNum)
+    #   if(int(time.time()) - int(cursorNum) > maxSeconds):
+#           print("超期，不再继续") 
+#           break;
+    #   cursorNum = GetPage(str(cursorNum))
+#       currentTime = int(time.time())
+#       cursorNum = GetPage(str(currentTime))
+#       records = db_record.QueryNews(cursorNum);    
+       #print(records)
 
     LoopGetRecords(1, cursorNum);
     ret = db_record.QueryMinCursor();
