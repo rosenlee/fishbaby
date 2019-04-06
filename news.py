@@ -44,17 +44,22 @@ CREATE TABLE `news` (
  `create_date`    datetime  default now()  comment '输入时间',
  `display_time`   datetime    comment '展示时间',
  `score`   int comment '权重',
+ `tag`   varchar(1024) comment 'tag',
+ `source`   varchar(8) default 'wsj' comment 'wsj or sina',
  `create_by`      varchar(32)    comment '输入者',
-UNIQUE INDEX `item_id_index`(`item_id`) USING BTREE
+  UNIQUE INDEX `item_id_index`(`item_id`, `source`) USING BTREE,
+  INDEX `tag_index`(`tag`) USING BTREE
 )ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
 
-
+,
 
 
 1547970922
 https://api-prod.wallstreetcn.com/apiv1/content/lives?channel=global-channel&client=pc&limit=20&first_page=false&accept=live%2Cvip-live&cursor=1547970922
+
+http://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=20&zhibo_id=152&tag_id=0&dire=f&dpc=1&pagesize=20&_=1548341385078
 """
 
 try:
@@ -131,25 +136,21 @@ class DBAccess:
         return self.Query(sql)
 
     def QueryMinCursor( self):
-        sql = "SELECT min(`cursor`) as min from `news`" ;
+        sql = "SELECT min(`cursor`) as min from `news` where source = 'wsj' ;" ;
+        print sql
+        return self.Query(sql)
+
+    def QueryMinId( self, source):
+        sql = "SELECT if(min(`item_id`) is null, 0, min(`item_id`)) as min from `news` where `source` = '%s' ;" % (source);
+        print sql
+        return self.Query(sql)
+
+    def QueryMaxId( self, source):
+        sql = "SELECT if(max(`item_id`) is null, 0, max(`item_id`)) as max from `news` where `source` = '%s' ;" % (source);
         print sql
         return self.Query(sql)
        
        
-    def QueryAreaInfo( self ):
-        try:
-            area_map = {}
-            sql = 'select PROVINCECODE,CITYCODE,NUMBERH3 from if.INT_VOP_FILENOSECT'
-            records = self.QueryBill(sql)
-            if records is None:
-                print "查询号段表出错！"
-                return False
-            for row in records:
-                area_map[row["NUMBERH3"]] = [row["PROVINCECODE"],row["CITYCODE"]]
-            return area_map
-        except:
-            traceback.print_exc()   
-            return None
         
     def InsertNews( self , content, displayTime, cursor, itemId, score):
         try:
@@ -167,12 +168,27 @@ class DBAccess:
             traceback.print_exc()   
             return None
             	
-	
+    def InsertNewsSina( self , content, displayTime, cursor, itemId, score,tag, source):
+        try:
+            sql = '''insert into `news` (`content`, `cursor`, `display_time`, `item_id`, `score`, `tag`, `source`) values( '%s', '%s', '%s', '%s', '%s', '%s', '%s');''' % (content , cursor ,displayTime, itemId, score,tag, source);
+	    #print (sql)
+            records = self.Insert(sql)
+            if records is None:
+	        print (sql)
+                print "插入数据出错！"
+                return False
+            if(True == records) :
+                self.commit();
+            return True
+        except:
+            traceback.print_exc()   
+            return None
+ 
 
 
 def getJsonText(url):
 
-    time.sleep(random.randint(1, 23)*3)
+    time.sleep(random.randint(1, 3)*3)
 
     request = Request(url)
 
@@ -196,20 +212,14 @@ def getJsonText(url):
 org_url="https://api-prod.wallstreetcn.com/apiv1/content/lives?channel=global-channel&client=pc&limit=60&first_page=false&accept=live%2Cvip-live&cursor="
 #cursor = '1547970922'
 
+#sina_url="http://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=20&zhibo_id=152&tag_id=0&dire=f&dpc=1&pagesize=20&_=1548341385078"
 
 #st =  time.localtime(int(cursor))
 #displayTime = time.strftime("%Y-%m-%d %X", st)
 
+#sinaMinId = 0
 
-#url = org_url + cursor
-
-#page = getJsonText(url)
-#print(page)
-#jsonText = json.loads(page)
-
-#print (jsonText['data']['items'][1]['content'])
-#print (displayTime)
-
+#wsj
 def GetPage(cursor):
     url = org_url + cursor
     page = getJsonText(url)
@@ -234,6 +244,74 @@ def GetPage(cursor):
     return jsonText['data']['next_cursor'].encode('utf-8');
         
 
+#sina
+'''
+#返回 页面信息
+
+"page_info": {
+	"totalPage": 20,
+	"pageSize": 20,
+	"prePage": 1,
+	"nextPage": 2,
+	"firstPage": 1,
+	"lastPage": 20,
+	"totalNum": 400,
+	"pName": "page",
+	"page": 1,
+	"max_id": 1112501,
+	"min_id": 1112481,
+	"last_id": 1112481,
+},
+
+'''
+def GetPageSina(cursor):
+    sina_url="http://zhibo.sina.com.cn/api/zhibo/feed?zhibo_id=152&tag_id=0&dire=f&dpc=1&pagesize=20&page_size=20&page="
+    url = sina_url + str(cursor)
+    print('url = ', url)
+    page = getJsonText(url)
+    jsonText = json.loads(page)
+   
+    resultCode = jsonText['result']['status']['code']
+    currentTime = jsonText['result']['timestamp']
+    #print( "resultCode = ", resultCode )
+    #print( "current-time = ", currentTime)
+
+    dataNode = jsonText['result']['data']['feed']
+    itemNum = len(dataNode['list'])
+    pageInfo = dataNode['page_info']
+    itemId=''
+    #print('page-size = ', pageInfo['pageSize'])
+    #print('itemNum', itemNum)
+    for i in range(itemNum) : 
+        content = dataNode['list'][i]['rich_text'].encode('utf-8')
+        #content = dataNode['list'][i]['rich_text'].encode('utf-8').decode('unicode_escape')
+        displayTime  = dataNode['list'][i]['create_time'].encode('utf-8')
+        itemId= dataNode['list'][i]['id']
+        score= 1
+
+        #get tags 
+        tagNum = len(dataNode['list'][i]['tag'])
+        tagStr = ""
+        for t in range(tagNum):
+           #f
+           if(9 == int(dataNode['list'][i]['tag'][t]['id'])):
+               score = 2
+           tagStr = tagStr + "," + dataNode['list'][i]['tag'][t]['name'].encode('utf-8')
+ 
+        ret = db_record.InsertNewsSina(content.encode('utf-8'), displayTime, cursor, itemId, score, tagStr, 'sina')
+        print( content )
+        print( tagStr )
+#        print(displayTime, cursor, itemId, score,tagStr)
+ 
+    pageInfo['max_id'] = dataNode['max_id']
+    pageInfo['min_id'] = dataNode['min_id']
+    #pageInfo['last_id'] = itemId
+
+    return pageInfo
+
+
+
+    
 #param: period, 区间。
 # startSecond， 从哪一秒开始？
 def LoopGetRecords(period, startSecond):
@@ -254,6 +332,90 @@ def LoopGetRecords(period, startSecond):
 
         return None
 
+
+
+'''
+本次页所在区间最大值， 最小值
+数据表中的最大值，最小值
+数据越新，id的数值越大。
+由于数据在更新，页码包括的数据也可能变化。
+本页的最大值 减去  数据表的最大值，即是本轮要更新的数据差。
+
+历史记录
+数据表中的最小值 减去 页面返回 的最小值，即为可更新的数据差 。
+
+pageNum = (pageMax - tableMax )/pageSize 
+
+142930-120849
+
+每次脚本执行最多更新 页数为30页，每页为20条。
+
+'''
+def LoopGetRecordsSina(period, startPage):
+    try:
+
+        pageSize = 20
+        sinaMinId = 0
+        idRet = db_record.QueryMinId('sina')
+        if idRet is not None:
+           sinaMinId = idRet[0]['min']
+
+        sinaMaxId = 0
+        idRet = db_record.QueryMaxId('sina')
+        if idRet is not None:
+           sinaMaxId = idRet[0]['max']
+    
+
+	maxPageNum = (int(sinaMaxId) - int(sinaMinId))/pageSize + int(period); #获取 n 页的数据
+	pageNum = int(startPage);
+        #用来记录上次的页码，为了防止出现死循环
+        lastPage = pageNum
+	while(pageNum is not None) :
+
+           print('get page-index = ', pageNum)
+           #print('start-page = ', startPage)
+           print('max-page = ', maxPageNum)
+	   if(int(pageNum) - int(startPage) > maxPageNum):
+		print("----超期，不再继续") ;
+		break;
+	   pageInfo = GetPageSina(str(pageNum));
+           pageNum = pageInfo['nextPage']
+           lastId = pageInfo['min_id']
+           #if(1==startPage):
+               #maxPageNum = (pageInfo['max_id'] - sinaMaxId)/pageSize + 1 
+           #    print('max-page-num = ', maxPageNum)
+           #    startPage = 0 
+
+           print('last-id = ', lastId)
+           print('table-max-id = ', sinaMaxId)
+           if( lastId < sinaMaxId):
+                #向下是重复了
+                print('----到了最近的历史数据区间上限，不再继续')
+                #顺便 计算历史记录从哪里开始继续找
+                print(lastId, sinaMinId)
+                #nextPage = ( lastId - sinaMinId )/pageSize - 1
+                idRet = db_record.QueryMinId('sina')
+                if idRet is not None:
+                    sinaMinId = idRet[0]['min']
+
+               #跳过重复页面
+                pageNum = pageNum + (lastId - sinaMinId )/pageSize
+
+           print('last-page = ', lastPage)
+           #判断是否出现重复页码
+           if(pageNum <= lastPage):
+               pageNum = pageNum + (lastPage-pageNum) + 1
+           lastPage = pageNum
+
+           print('next-page = ', pageNum)
+
+    except : 
+        print ("url Exception")
+        traceback.print_exc()
+
+        return None
+
+
 #
 
 if __name__ == '__main__':
@@ -266,23 +428,16 @@ if __name__ == '__main__':
        exit()
     
     db_record = DBAccess()
-    db_record.connect('127.0.0.1', 'name', 'password', 'data', 3306)
-   
-    
-    #maxSeconds = 60*60*24*7 #获取7天的数据
+    db_record.connect('127.0.0.1', 'dev', 'dev123456', 'dev', 3306) 
 
+#    nextPage = LoopGetRecordsSina(30, 1);
+#    sys.exit()
+
+
+
+
+    # 开始处理华尔街 消息
     cursorNum = int(time.time())
-    #while(cursorNum is not None) :
-       #print(int(time.time()))
-       #print(cursorNum)
-    #   if(int(time.time()) - int(cursorNum) > maxSeconds):
-#           print("超期，不再继续") 
-#           break;
-    #   cursorNum = GetPage(str(cursorNum))
-#       currentTime = int(time.time())
-#       cursorNum = GetPage(str(currentTime))
-#       records = db_record.QueryNews(cursorNum);    
-       #print(records)
 
     LoopGetRecords(1, cursorNum);
     ret = db_record.QueryMinCursor();
