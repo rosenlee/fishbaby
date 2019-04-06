@@ -8,7 +8,7 @@ Created on 2019/01/21
 
 @group : 
 
-@contact: rosenlove@qq.com
+
 
 """
 
@@ -71,6 +71,23 @@ except ImportError:
     from urllib2 import urlopen, Request
 
     
+'''
+get num of day 
+'''
+
+def getNumOfDay():
+    a = time.time()
+    dayNum = int (time.strftime('%j', time.localtime(a)) )
+    return dayNum
+
+
+'''
+get num of year, from 2019
+'''
+def getNumOfYear():
+    a = time.time()
+    yearNum = int (time.strftime('%y', time.localtime(a)) )
+    return yearNum - 19;
 
 
 class DBAccess:
@@ -171,7 +188,7 @@ class DBAccess:
     def InsertNewsSina( self , content, displayTime, cursor, itemId, score,tag, source):
         try:
             sql = '''insert into `news` (`content`, `cursor`, `display_time`, `item_id`, `score`, `tag`, `source`) values( '%s', '%s', '%s', '%s', '%s', '%s', '%s');''' % (content , cursor ,displayTime, itemId, score,tag, source);
-	    #print (sql)
+	    print (sql)
             records = self.Insert(sql)
             if records is None:
 	        print (sql)
@@ -188,7 +205,7 @@ class DBAccess:
 
 def getJsonText(url):
 
-    time.sleep(random.randint(1, 3)*3)
+    time.sleep(random.randint(1, 13)*1)
 
     request = Request(url)
 
@@ -415,6 +432,77 @@ def LoopGetRecordsSina(period, startPage):
 
         return None
 
+'''
+ another version of get record from sina
+'''
+def LoopGetRecordsSina_V2(period, startPage):
+    try:
+
+        historyStartPage=6550
+        pageSize = 20
+        sinaMinId = 0
+        idRet = db_record.QueryMinId('sina')
+        if idRet is not None:
+           sinaMinId = idRet[0]['min']
+
+        sinaMaxId = 0
+        idRet = db_record.QueryMaxId('sina')
+        if idRet is not None:
+           sinaMaxId = idRet[0]['max']
+       
+        todayNum = getNumOfDay()
+        yearNum = getNumOfYear()
+        #96 是指从4月6日开始。
+        maxPageNum = (todayNum - 96 +1) *period +  historyStartPage + yearNum*400;
+        historyPageNum = (todayNum - 96) *period +  historyStartPage + yearNum*400;
+    
+
+#	maxPageNum = (int(sinaMaxId) - int(sinaMinId))/pageSize + int(period); #获取 n 页的数据
+	pageNum = int(startPage);
+        #用来记录上次的页码，为了防止出现死循环
+        lastPage = pageNum
+	while(pageNum is not None) :
+
+           print('get page-index = ', pageNum)
+           #print('start-page = ', startPage)
+           print('max-page = ', maxPageNum)
+	   if(int(pageNum) - int(startPage) > maxPageNum):
+		print("----超期，不再继续") ;
+		break;
+	   pageInfo = GetPageSina(str(pageNum));
+           pageNum = pageInfo['nextPage']
+           lastId = pageInfo['min_id']
+           #if(1==startPage):
+               #maxPageNum = (pageInfo['max_id'] - sinaMaxId)/pageSize + 1 
+           #    print('max-page-num = ', maxPageNum)
+           #    startPage = 0 
+
+           print('last-id = ', lastId)
+           print('table-max-id = ', sinaMaxId)
+           if( lastId < sinaMaxId):
+                #向下是重复了
+                print('----到了最近的历史数据区间上限，不再继续')
+                #顺便 计算历史记录从哪里开始继续找
+                print(lastId, sinaMinId)
+                #nextPage = ( lastId - sinaMinId )/pageSize - 1
+               #跳过重复页面
+                pageNum = historyPageNum
+
+           print('last-page = ', lastPage)
+           #判断是否出现重复页码
+           if(pageNum <= lastPage):
+               pageNum = pageNum + (lastPage-pageNum) + 1
+           lastPage = pageNum
+
+           print('next-page = ', pageNum)
+
+    except : 
+        print ("url Exception")
+        traceback.print_exc()
+
+        return None
+
+
 
 #
 
@@ -428,14 +516,15 @@ if __name__ == '__main__':
        exit()
     
     db_record = DBAccess()
-    db_record.connect('127.0.0.1', 'dev', 'dev123456', 'dev', 3306) 
+    db_record.connect('127.0.0.1', 'db', 'passwd', 'db', 3306) 
 
-#    nextPage = LoopGetRecordsSina(30, 1);
+    #nextPage = LoopGetRecordsSina(35, 1);
+    LoopGetRecordsSina_V2(35,1)
 #    sys.exit()
 
 
 
-
+#    exit();
     # 开始处理华尔街 消息
     cursorNum = int(time.time())
 
